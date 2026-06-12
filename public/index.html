@@ -1,0 +1,55 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Evolution of Trust</title>
+<style>
+body{font-family:Arial;max-width:800px;margin:40px auto}
+button{padding:12px 20px;margin:8px}
+pre{background:#f2f2f2;padding:10px}
+</style>
+</head>
+<body>
+<h1>Evolution of Trust</h1>
+
+<button id="create">Create Room</button>
+<p id="share"></p>
+
+<div id="game" style="display:none">
+<h2 id="roomTitle"></h2>
+<button onclick="play('cooperate')">Cooperate</button>
+<button onclick="play('compete')">Compete</button>
+<pre id="state"></pre>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket=io();
+
+const params=new URLSearchParams(location.search);
+let room=params.get('room');
+
+document.getElementById('create').onclick=()=>{
+ const id=Math.random().toString(36).slice(2,8);
+ location.href='?room='+id;
+};
+
+if(room){
+ document.getElementById('game').style.display='block';
+ document.getElementById('roomTitle').textContent='Room '+room;
+ document.getElementById('share').textContent='Share this link: '+location.href;
+
+ socket.emit('join',room);
+
+ socket.on('state',data=>{
+   document.getElementById('state').textContent=JSON.stringify(data,null,2);
+ });
+}
+
+function play(choice){
+ socket.emit('choice',{room,choice});
+}
+</script>
+</body>
+</html>
