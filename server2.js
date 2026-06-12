@@ -45,7 +45,9 @@ function createRoom(roomId){
 
     participants[letter] = {
       id: letter,
-      type: "empty",
+      type: letter === "A" || letter === "B"
+        ? "empty"
+        : "agent",
       score: 0
     };
 
