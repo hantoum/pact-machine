@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pact Machine</title>
+
+<style>
+
+body{
+  margin:0;
+  background:#111;
+  color:#eee;
+  font-family:Arial,sans-serif;
+}
+
+.container{
+  max-width:900px;
+  margin:auto;
+  padding:20px;
+}
+
+.card{
+  background:#1d1d1d;
+  border:1px solid #333;
+  border-radius:12px;
+  padding:20px;
+  margin-bottom:20px;
+}
+
+h1,h2,h3{
+  margin-top:0;
+}
+
+button{
+  padding:12px 24px;
+  margin:5px;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+  background:#333;
+  color:white;
+}
+
+button:hover{
+  background:#444;
+}
+
+input{
+  padding:10px;
+  border-radius:8px;
+  border:none;
+  width:250px;
+}
+
+.hidden{
+  display:none;
+}
+
+.leaderboard-row{
+  display:flex;
+  justify-content:space-between;
+  padding:8px;
+  border-bottom:1px solid #333;
+}
+
+.history-entry{
+  padding:10px;
+  border-bottom:1px solid #333;
+}
+
+.big{
+  font-size:22px;
+  font-weight:bold;
+}
+
+.opponent{
+  font-size:28px;
+  text-align:center;
+}
+
+.result{
+  font-size:18px;
+  line-height:1.7;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>Pact Machine</h1>
+
+<div id="home" class="card">
+
+<button id="createRoom">
+Create Room
+</button>
+
+<p id="share"></p>
+
+</div>
+
+<div id="joinCard" class="card hidden">
+
+<h2>Join Game</h2>
+
+<input
+id="nameInput"
+placeholder="Your name">
+
+<button id="joinBtn">
+Join
+</button>
+
+</div>
+
+<div id="game" class="hidden">
+
+<div class="card">
+
+<div id="myLetter" class="big"></div>
+
+<div id="roundInfo"></div>
+
+</div>
+
+<div class="card">
+
+<h2>Leaderboard</h2>
+
+<div id="leaderboard"></div>
+
+</div>
+
+<div class="card">
+
+<h2>Current Opponent</h2>
+
+<div
+id="opponent"
+class="opponent">
+Waiting...
+</div>
+
+</div>
+
+<div class="card">
+
+<h2>Your Move</h2>
+
+<button id="coopBtn">
+Cooperate
+</button>
+
+<button id="compBtn">
+Compete
+</button>
+
+<div id="status"></div>
+
+</div>
+
+<div class="card">
+
+<h2>History</h2>
+
+<select id="historySelect"></select>
+
+<div id="historyBox"></div>
+
+</div>
+
+<div class="card">
+
+<h2>Reveal</h2>
+
+<div id="reveal"></div>
+
+</div>
+
+</div>
+
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+
+<script>
+
+const socket = io();
+
+const params =
+new URLSearchParams(location.search);
+
+const roomId =
+params.get("room");
+
+let state = null;
+
+const createBtn =
+document.getElementById(
+"createRoom"
+);
+
+if(roomId){
+
+document
+.getElementById("share")
+.innerHTML =
+"Share this link:<br><br>"
++ location.href;
+
+document
+.getElementById("joinCard")
+.classList.remove("hidden");
+
+}else{
+
+createBtn.onclick=()=>{
+
+const id =
+Math.random()
+.toString(36)
+.slice(2,8);
+
+location.href =
+"?room="+id;
+
+};
+
+}
+
+document
+.getElementById("joinBtn")
+.onclick=()=>{
+
+const name =
+document
+.getElementById(
+"nameInput"
+)
+.value.trim();
+
+if(!name) return;
+
+socket.emit(
+"join",
+{
+roomId,
+name
+}
+);
+
+document
+.getElementById(
+"joinCard"
+)
+.classList.add(
+"hidden"
+);
+
+document
+.getElementById(
+"game"
+)
+.classList.remove(
+"hidden"
+);
+
+};
+
+socket.on(
+"roomFull",
+()=>{
+alert(
+"Room full"
+);
+}
+);
+
+socket.on(
+"state",
+s=>{
+
+state = s;
+
+render();
+
+}
+);
+
+function render(){
+
+if(!state) return;
+
+document
+.getElementById(
+"myLetter"
+)
+innerHTML =
+`You are Participant ${state.me}`;
+
+document
+.getElementById(
+"roundInfo"
+)
+.innerHTML =
+`Round ${Math.min(state.round,state.maxRounds)} / ${state.maxRounds}`;
+
+document
+.getElementById(
+"opponent"
+)
+.innerHTML =
+state.opponent
+? `Participant ${state.opponent}`
+: "Waiting";
+
+const lb =
+document
+.getElementById(
+"leaderboard"
+);
+
+lb.innerHTML =
+state.leaderboard
+.map(
+p=>`
+<div class="leaderboard-row">
+<div>
+Participant ${p.id}
+</div>
+<div>
+${p.score}
+</div>
+</div>
+`
+)
+.join("");
+
+populateHistory();
+
+if(state.gameOver){
+
+document
+.getElementById(
+"status"
+)
+.innerHTML =
+"<b>Game Over</b>";
+
+document
+.getElementById(
+"reveal"
+)
+.innerHTML =
+
+Object.entries(
+state.reveal
+)
+.map(
+([id,strategy])=>
+`Participant ${id}: ${strategy}`
+)
+.join("<br>");
+
+}
+
+}
+
+function populateHistory(){
+
+const select =
+document
+.getElementById(
+"historySelect"
+);
+
+const letters =
+["A","B","C","D","E","F"]
+.filter(
+l => l !== state.me
+);
+
+select.innerHTML =
+letters.map(
+l =>
+`<option value="${l}">
+Participant ${l}
+</option>`
+)
+.join("");
+
+select.onchange =
+showHistory;
+
+showHistory();
+
+}
+
+function showHistory(){
+
+const target =
+document
+.getElementById(
+"historySelect"
+)
+.value;
+
+const key =
+[state.me,target]
+.sort()
+.join("-");
+
+const data =
+state.history[key]
+|| [];
+
+document
+.getElementById(
+"historyBox"
+)
+.innerHTML =
+
+data.map(
+h=>{
+
+const myMove =
+h[state.me];
+
+const theirMove =
+h[target];
+
+return `
+<div class="history-entry">
+
+Round ${h.round}<br>
+
+You:
+${myMove}<br>
+
+Participant ${target}:
+${theirMove}
+
+</div>
+`;
+
+}
+).join("");
+
+}
+
+document
+.getElementById(
+"coopBtn"
+)
+.onclick=()=>{
+
+socket.emit(
+"choice",
+{
+roomId,
+choice:
+"cooperate"
+}
+);
+
+document
+.getElementById(
+"status"
+)
+.innerHTML =
+"Choice submitted.";
+
+};
+
+document
+.getElementById(
+"compBtn"
+)
+.onclick=()=>{
+
+socket.emit(
+"choice",
+{
+roomId,
+choice:
+"compete"
+}
+);
+
+document
+.getElementById(
+"status"
+)
+.innerHTML =
+"Choice submitted.";
+
+};
+
+</script>
+
+</body>
+</html>
