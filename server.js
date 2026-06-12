@@ -1,58 +1,128 @@
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
 
-const express=require('express');
-const http=require('http');
-const {Server}=require('socket.io');
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
-const app=express();
-const server=http.createServer(app);
-const io=new Server(server);
+app.use(express.static("public"));
 
-app.use(express.static('public'));
+const MAX_ROUNDS = 10;
 
-const rooms={};
+const rooms = {};
 
-function score(a,b){
- if(a==='cooperate'&&b==='cooperate') return [3,3];
- if(a==='cooperate'&&b==='compete') return [0,5];
- if(a==='compete'&&b==='cooperate') return [5,0];
- return [1,1];
+function score(a, b) {
+  if (a === "cooperate" && b === "cooperate") return [3, 3];
+  if (a === "cooperate" && b === "compete") return [0, 5];
+  if (a === "compete" && b === "cooperate") return [5, 0];
+  return [1, 1];
 }
 
-io.on('connection',socket=>{
- socket.on('join',room=>{
-   socket.join(room);
+function publicState(roomId) {
+  const room = rooms[roomId];
 
-   if(!rooms[room]) rooms[room]={players:[],choices:{},scores:{}};
+  return {
+    players: room.players.map(p => ({
+      id: p.id,
+      name: p.name,
+      score: p.score
+    })),
+    round: room.round,
+    maxRounds: MAX_ROUNDS,
+    gameOver: room.round > MAX_ROUNDS,
+    choicesSubmitted: Object.keys(room.choices).length,
+    lastRound: room.lastRound || null
+  };
+}
 
-   if(!rooms[room].players.includes(socket.id))
-      rooms[room].players.push(socket.id);
+io.on("connection", socket => {
 
-   io.to(room).emit('state',rooms[room]);
- });
+  socket.on("join", ({ roomId, name }) => {
 
- socket.on('choice',({room,choice})=>{
-   const r=rooms[room];
-   if(!r) return;
+    if (!rooms[roomId]) {
+      rooms[roomId] = {
+        players: [],
+        choices: {},
+        round: 1,
+        lastRound: null
+      };
+    }
 
-   r.choices[socket.id]=choice;
+    const room = rooms[roomId];
 
-   if(Object.keys(r.choices).length>=2){
-      const ids=Object.keys(r.choices);
-      const [s1,s2]=score(r.choices[ids[0]],r.choices[ids[1]]);
+    if (room.players.length >= 2) {
+      socket.emit("roomFull");
+      return;
+    }
 
-      r.scores[ids[0]]=(r.scores[ids[0]]||0)+s1;
-      r.scores[ids[1]]=(r.scores[ids[1]]||0)+s2;
+    room.players.push({
+      id: socket.id,
+      name,
+      score: 0
+    });
 
-      r.lastRound={
-        choices:r.choices,
-        result:[s1,s2]
+    socket.join(roomId);
+
+    io.to(roomId).emit("state", publicState(roomId));
+  });
+
+  socket.on("choice", ({ roomId, choice }) => {
+
+    const room = rooms[roomId];
+    if (!room) return;
+
+    room.choices[socket.id] = choice;
+
+    io.to(roomId).emit("state", publicState(roomId));
+
+    if (Object.keys(room.choices).length === 2) {
+
+      const p1 = room.players[0];
+      const p2 = room.players[1];
+
+      const c1 = room.choices[p1.id];
+      const c2 = room.choices[p2.id];
+
+      const [s1, s2] = score(c1, c2);
+
+      p1.score += s1;
+      p2.score += s2;
+
+      room.lastRound = {
+        round: room.round,
+        player1: p1.name,
+        player2: p2.name,
+        choice1: c1,
+        choice2: c2,
+        score1: s1,
+        score2: s2
       };
 
-      r.choices={};
-   }
+      room.choices = {};
+      room.round++;
 
-   io.to(room).emit('state',r);
- });
+      io.to(roomId).emit("state", publicState(roomId));
+    }
+  });
+
+  socket.on("disconnect", () => {
+
+    Object.keys(rooms).forEach(roomId => {
+
+      const room = rooms[roomId];
+
+      room.players = room.players.filter(
+        p => p.id !== socket.id
+      );
+
+      if (room.players.length === 0) {
+        delete rooms[roomId];
+      } else {
+        io.to(roomId).emit("state", publicState(roomId));
+      }
+    });
+  });
 });
 
-server.listen(process.env.PORT||3000);
+server.listen(process.env.PORT || 3000);
