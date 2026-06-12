@@ -129,7 +129,7 @@ function lastOpponentMove(room,agentId,otherId){
 
   const last = h[h.length-1];
 
-  if(last[agentId])
+  if(last[otherId])
     return last[agentId];
 
   return null;
